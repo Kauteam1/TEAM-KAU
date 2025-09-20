@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+# -- coding: utf-8 --
+
+import cv2 as cv
+import numpy as np
+import yaml
+import glob
+import time
+import os
+import re
+import math
+import sys
+from collections import deque
+try:
+    import serial
+except ImportError:
+    serial = None
+
+# Configuration settings
+CONFIG = {
+    "TURN_DEG": 90.0,  # Turn angle for corners
+    "TURN_TOL_DEG": 10.0,  # Tolerance for turn angle
+    "PILLAR_TURN_DEG": 90.0,  # Turn angle for pillars
+    "FLIP_TURN_DEG": 180.0,  # Flip turn angle
+    "DRIVE_SPEED": 26,  # Default drive speed
+    "SEE_COLOR_SPEED": 22,  # Speed when color detected
+    "FRAME_W": 640,  # Frame width
+    "FRAME_H": 480,  # Frame height
+    "ROBOT_PORT": "/dev/ttyUSB0",  # Serial port
+    "ROBOT_BAUD": 115200,  # Baud rate
+    "COLOR_CONFIRM_FRAMES": 2,  # Frames to confirm color
+    "MIN_PIX_COLOR": 50,  # Min pixels for color detection
+    "PILLAR_MIN_PIX": 80,  # Min pixels for pillar detection
+    "PILLAR_ACCEPT_CM": 50.0,  # Pillar acceptance distance
+    "US_MAX_CM": 300.0,  # Max ultrasonic distance
+}
+
+# Camera management class
+class Camera:
+    def _init_(self, width=CONFIG["FRAME_W"], height=CONFIG["FRAME_H"]):
+        self.width = width
+        self.height = height
+        self.cap = self._open_camera()
+
+    def _gstreamer_pipeline(self, sensor_id=0, capture_width=1280, capture_height=720, framerate=30, flip_method=0):
+        # Create GStreamer pipeline for video capture
+        return (
+            f"nvarguscamerasrc sensor-id={sensor_id} ! "
+            f"video/x-raw(memory:NVMM), width={capture_width}, height={capture_height}, "
+            f"format=(string)NV12, framerate={framerate}/1 ! "
+            f"nvvidconv flip-method={flip_method} ! "
+            f"video/x-raw, width={self.width}, height={self.height}, format=(string)BGRx ! "
+            "videoconvert ! video/x-raw, format=(string)BGR ! appsink drop=1"
+        )
+
+    def _open_camera(self):
+        # Attempt to open camera with GStreamer or V4L2
+        try:
+            cap = cv.VideoCapture(self._gstreamer_pipeline(), cv.CAP_GSTREAMER)
+            if cap.isOpened():
+                return cap
+        except Exception:
+            pass
+        try:
+            cap = cv.VideoCapture(0, cv.CAP_V4L2)
+            if cap.isOpened():
+                return cap
+        except Exception:
+            pass
+        print("Error: Failed to open camera.")
+        return None
+
+    def read_frame(self):
+        # Read frame from camera
+        if not self.cap:
+            return False, np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        ok, frame = self.cap.read()
+        if not ok:
+            cv.putText(frame, "Frame read failed", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        return ok, frame
+
+    def release(self):
+        # Release camera
+        if self.cap:
+            self.cap.release()
+
+# Serial communication class
+class RobotSerial:
+    def _init_(self, port=CONFIG["ROBOT_PORT"], baud=CONFIG["ROBOT_BAUD"]):
+        self.port = port
+        self.baud = baud
+        self.serial = None
+        self._open_serial()
+
+    def _open_serial(self):
+        # Open serial connection
+        if serial is None:
+            print("Warning: Serial library not available.")
+            return
+        try:
+            self.serial = serial.Serial(self.port, baudrate=self.baud, timeout=0.01, write_timeout=0.2)
+            time.sleep(0.3)
+            self.serial.reset_input_buffer()
+            self.serial.reset_output_buffer()
+            print(f"Serial opened on {self.port}")
+        except Exception as e:
+            print(f"Warning: Failed to open serial: {e}")
+            self.serial = None
+
+    def write(self, data):
+        # Write data to robot
+        if self.serial is None:
+            return False
+        try:
+            self.serial.write(data)
+            return True
+        except Exception as e:
+            print(f"Error writing to serial: {e}")
+            self.serial = None
+            self._open_serial()
+            return False
+
+    def read_telemetry(self):
+        # Read telemetry from robot
+        if self.serial is None:
+            return None
+        try:
+            data = self.serial.read(256)
+            return data.decode("utf-8", "ignore").strip()
+        except Exception as e:
+            print(f"Error reading serial: {e}")
+            return None
+
+# Robot control class
+class RobotController:
+    def _init_(self):
+        self.state = "WAIT_START"
+        self.yaw = 0.0
+        self.corridor_idx = 0
+        self.turn_count = 0
+        self.color_queue = deque(maxlen=CONFIG["COLOR_CONFIRM_FRAMES"])
+        self.camera = Camera()
+        self.serial = RobotSerial()
+        self.yaml_config, self.yaml_path = self._load_yaml()
+        self.last_tx = 0.0
+
+    def _load_yaml(self):
+        # Load latest YAML config for color ranges
+        cands = sorted(glob.glob("config/vision_*.yaml"))
+        if not cands:
+            raise FileNotFoundError("No config file found in ./config")
+        path = cands[-1]
+        with open(path, "r") as f:
+            return yaml.safe_load(f), path
+
+    def _detect_color(self, frame):
+        # Detect BLUE/ORANGE colors in frame
+        h, w = frame.shape[:2]
+        roi_w, roi_h = int(w * 0.28), int(h * 0.20)
+        x0, y0 = (w - roi_w) // 2, h - roi_h
+        roi = frame[y0:y0 + roi_h, x0:x0 + roi_w]
+        roi = cv.GaussianBlur(roi, (3, 3), 0)
+        hsv = cv.cvtColor(roi, cv.COLOR_BGR2HSV)
+        m_blue = cv.inRange(hsv, np.array(self.yaml_config["BLUE"]["low"]), np.array(self.yaml_config["BLUE"]["high"]))
+        m_orange = cv.inRange(hsv, np.array(self.yaml_config["ORANGE"]["low"]), np.array(self.yaml_config["ORANGE"]["high"]))
+        pix_blue, pix_orange = np.count_nonzero(m_blue), np.count_nonzero(m_orange)
+        if pix_blue >= CONFIG["MIN_PIX_COLOR"]:
+            return "BLUE"
+        if pix_orange >= CONFIG["MIN_PIX_COLOR"]:
+            return "ORANGE"
+        return None
+
+    def _control_loop(self):
+        # Main control loop
+        cv.namedWindow("robot", cv.WINDOW_AUTOSIZE)
+        print("Ready. Commands: S=start, Q=quit")
+        while True:
+            ok, frame = self.camera.read_frame()
+            if not ok:
+                print("Error: Failed to read frame.")
+                break
+            color = self._detect_color(frame)
+            if color:
+                self.color_queue.append(color)
+            else:
+                self.color_queue.clear()
+            # Display frame
+            cv.imshow("robot", frame)
+            key = cv.waitKey(1) & 0xFF
+            if key == ord('q'):
+                self.serial.write(b"STOP\n")
+                break
+            elif key == ord('s'):
+                self.state = "RUN"
+                self.serial.write(b"START\n")
+                print("Started.")
+        self.camera.release()
+        cv.destroyAllWindows()
+
+    def run(self):
+        # Run the controller
+        try:
+            self._control_loop()
+        except KeyboardInterrupt:
+            print("Exiting due to KeyboardInterrupt.")
+            self.serial.write(b"STOP\n")
+            self.camera.release()
+            cv.destroyAllWindows()
+            sys.exit(0)
+
+if _name_ == "_main_":
+    controller = RobotController()
+    controller.run()
