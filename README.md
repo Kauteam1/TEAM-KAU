@@ -2,8 +2,9 @@
 Our robot combines computer vision, sensor feedback, and intelligent
 control to navigate the field in both open and obstacle rounds.
 
-Here is the YouTube video link for our robot → \[]
+Here is the YouTube video link for our robot open round → \[https://youtu.be/EO0l7DpHomU?si=pYyQ_6kdtGGWtemz]
 
+and this one for the obstcale round : https://youtu.be/u7FB2YUX0O8?si=fx4Elsj_YtnQy5pn
 ------------------------------------------------------------------------
 
 ## Strategy of the Robot
