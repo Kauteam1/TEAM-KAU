@@ -1,4 +1,4 @@
-## Welcome! We are TEAM KAU
+## Welcome! We are TEAM Saudi innovators 2030
 Our robot combines computer vision, sensor feedback, and intelligent
 control to navigate the field in both open and obstacle rounds.
 
