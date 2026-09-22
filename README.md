@@ -12,77 +12,63 @@ Here is the YouTube video link for our robot obstacles challenge  → \[[[https:
 
 ### Open Round
 
-In the open round, the robot's task is to complete *three full loops*
-around the arena without colliding with walls.
-
--   The *Raspberry Pi* analyzes the live video feed from the WEB
-    camera to keep the robot on track.\
--   The *ESP32* manages motor control and uses DF ultrasonic sensors
-    to maintain safe distances from walls and corners.\
--   A *differential mechanism* and servo steering provide smooth turns
-    at every corner, giving the robot stable and efficient movement.
+ In the open round, the robot's task is to complete three full loops around the arena without colliding with walls.  
+ The HuskyLens 2 camera analyzes live frames (identifying blue and orange markers) to keep the robot on track and detect intersections.  
+ The Arduino Mega 2560 processes sensor data, utilizes the MPU6050 IMU for yaw/heading control, and manages URM09 ultrasonic sensors to maintain safe distances from walls and corners.  
+ A DC motor with encoder, BTS7960 driver, and steering servo provide precise movement, smooth turns, and 
+consistent distance tracking at every corner.
 
 ------------------------------------------------------------------------
-
 ### Obstacle Round
 
-In the obstacle round, *colored cubes* (green and red) are placed
-along the path. The *Raspberry Pi* processes the video, applies ROI
-(Region of Interest), and identifies each cube's color and distance.
-
--   *Green Cube →* The Raspberry Pi commands the ESP32 to turn
-    *left* around the cube.\
--   *Red Cube →* The Raspberry Pi commands the ESP32 to turn *right*
-    around the cube.
-
-The ESP32 executes these instructions through DC motors and servo
-motors, while the DF ultrasonic sensors confirm safe movement.\
-This system allows the robot to complete its loops intelligently,
+In the obstacle round, colored pillars (green and red) are placed along the path. The HuskyLens 2 processes the video, applies severity-based filtering, and identifies each pillar's color, position, and distance.  
+ Green Pillar ➔ The Arduino Mega 2560 commands the steering servo and motor to turn left around the pillar.  
+ Red Pillar ➔ The Arduino Mega 2560 commands the steering servo and motor to turn right around the pillar.  
+The Arduino Mega 2560 executes these instructions through the BTS7960 driver, DC motor, and steering servo, while the URM09 ultrasonic sensors (including rear sensors) confirm safe movement and clearance. This system allows the robot to complete its loops intelligently, reacting dynamically to obstacles.o complete its loops intelligently,
 reacting dynamically to obstacles.
 
 ------------------------------------------------------------------------
 
-## How to Use ESP32 as a Low-Level Controller
+## how the Arduino Mega 2560 was utilized in the robot:
 
 The ESP32 acts as the low-level controller, receiving commands from the
 Raspberry Pi and controlling the actuators.
-
--   *Programming:* Can be programmed via Arduino IDE or PlatformIO.\
--   *Communication:* Receives instructions from Raspberry Pi via UART
-    and sends sensor feedback back.\
--   *Motor Control:* Generates PWM signals for DC and servo motors.\
--   *Sensor Integration:* Reads data from gyro and DF ultrasonic
-    sensors.\
--   *Extra Features:* Controls a buzzer to provide audio feedback.
+Central Control: Manages the main software loop to operate the robot and execute decision-making.  
+ Vision: Receives camera data (intersections and pillars) via UART.  
+ Motion & Steering: Controls the drive motor and servo via the BTS7960 driver.  
+ Sensors & Navigation: Reads the MPU6050 gyroscope to stabilize heading and URM09 sensors to avoid obstacles and center the robot in corridors.
 
 ------------------------------------------------------------------------
 
 ## Robot Components
 
-### Raspberry Pi (High-Level Controller)
+### Arduino Mega 2560
+The Arduino Mega 2560 serves as the main controller. It receives data from the HUSKYLENS 2 and controls:
 
-Handles vision processing and decision-making. Runs OpenCV-based
-algorithms for cube detection and path planning.\
-*Specs:* Quad-core ARM Cortex-A72, up to 8GB RAM, Wi-Fi + Bluetooth,
-CSI camera interface.
-
-------------------------------------------------------------------------
-
-### ESP32 (Low-Level Controller)
-
-Executes motor commands and processes sensor feedback. Dual-core
-processor, built-in Wi-Fi and Bluetooth, 34 GPIO pins with ADC, PWM,
-I2C, SPI, UART support.
+DC motors for movement.
+Servo motors for steering.
+A buzzer for sound alerts. It also reads the MPU6050 gyro sensor to track heading and maintain accurate orientation.
 
 ------------------------------------------------------------------------
 
-### WEB  Camera
+### HUSKYLENS 2
+The HuskyLens 2 is an AI-powered machine vision sensor designed to act as both the "eyes and brain" for robotics and embedded systems.
 
-Provides high-quality video input for real-time image analysis on the
-Raspberry Pi.
+Edge AI Processing: It independently analyzes images to recognize colors, objects, lines, and faces, taking the computational load off the main microcontroller.
+Click-to-Learn Training: Using its built-in screen and buttons, it can learn to identify new objects or colors instantly without requiring external computers or complex programming.
+Ready-to-Use Data: It transmits processed results (X, Y coordinates, width, height, and IDs) directly to controllers like Arduino via UART or I2C, making it highly efficient for autonomous tasks for real-time image processing in robotics.
+
 
 ------------------------------------------------------------------------
 
+### RN AI robot structure 
+
+Base Chassis & Rails: Provides the lower perforated deck and main chassis rails that form the structural foundation of the robot.  
+ Wheels & Drivetrain: Supplies the pre-built wheels and geared drive hubs used for mobility and movement.
+ Mechanical Integration: Offers a solid and reliable mounting platform for the motors and base structure, which was extended using custom laser-cut acrylic boards for our electronics deck, camera mast, and sensors.
+
+
+------------------------------------------------------------------------
 ### Servo Motors
 
 Used for steering and camera adjustments. Provide precise angular
@@ -133,15 +119,6 @@ Since the battery provides higher voltage than the sensors and
 controllers can handle, a voltage regulator is used to step it down to a
 stable 5V. This prevents electrical noise or power surges from damaging
 sensitive electronics such as the ESP32 and DF ultrasonic sensors.
-
-------------------------------------------------------------------------
-
-### 3D Printing
-
-Several mechanical components such as the body frame, servo holders, and
-protective covers were designed and fabricated using a 3D printer. This
-method allowed us to create lightweight and customized parts that fit
-the robot's exact dimensions, improving assembly and stability.
 
 ------------------------------------------------------------------------
 
